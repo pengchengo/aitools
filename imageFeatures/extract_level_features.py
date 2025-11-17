@@ -12,6 +12,7 @@ from pathlib import Path
 import json
 from typing import Dict, List, Tuple
 import warnings
+from openpyxl.utils import get_column_letter
 warnings.filterwarnings('ignore')
 
 
@@ -321,12 +322,14 @@ class LevelFeatureExtractor:
             
             # 自动调整列宽
             worksheet = writer.sheets[sheet_name]
-            for idx, col in enumerate(df.columns):
+            for idx, col in enumerate(df.columns, start=1):
                 max_length = max(
                     df[col].astype(str).map(len).max(),
                     len(str(col))
                 )
-                worksheet.column_dimensions[chr(65 + idx)].width = min(max_length + 2, 50)
+                # 使用 get_column_letter 正确处理超过26列的情况
+                column_letter = get_column_letter(idx)
+                worksheet.column_dimensions[column_letter].width = min(max_length + 2, 50)
         
         print(f"\n特征已保存到: {self.output_file}")
         print(f"共 {len(df)} 个关卡，{len(df.columns)} 个特征")
