@@ -54,10 +54,10 @@ class LevelFeatureExtractor:
             features = {}
             
             # 1. 基础信息
-            features['图片宽度'] = w
-            features['图片高度'] = h
-            features['宽高比'] = round(w / h, 3) if h > 0 else 0
-            features['总像素数'] = w * h
+            #features['图片宽度'] = w
+            #features['图片高度'] = h
+            #features['宽高比'] = round(w / h, 3) if h > 0 else 0
+            #features['总像素数'] = w * h
             
             # 2. 颜色特征
             color_features = self._extract_color_features(img_rgb)
@@ -279,6 +279,9 @@ class LevelFeatureExtractor:
         for ext in self.supported_formats:
             image_files.extend(list(self.image_dir.glob(f"*{ext}")))
             image_files.extend(list(self.image_dir.glob(f"*{ext.upper()}")))
+        
+        # 去重（Windows文件系统不区分大小写，可能导致重复）
+        image_files = list(set(image_files))
         
         if not image_files:
             raise ValueError(f"在 {self.image_dir} 中未找到图片文件")
