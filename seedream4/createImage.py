@@ -35,9 +35,7 @@ client = Ark(
     # Get API Key：https://console.volcengine.com/ark/region:ark+cn-beijing/apikey
     # 方式1：从环境变量读取（推荐，更安全）
     # 先设置环境变量：export ARK_API_KEY='your-api-key' (Linux/Mac) 或 set ARK_API_KEY=your-api-key (Windows)
-    api_key=os.getenv('ARK_API_KEY', '58b81751-2138-479e-80d0-3d22b215bd97'), 
-    # 方式2：直接使用 API key（不推荐，仅用于测试）
-    # api_key='58b81751-2138-479e-80d0-3d22b215bd97',
+    api_key=os.getenv('ARK_API_KEY')
 )
 
 # 提示词
