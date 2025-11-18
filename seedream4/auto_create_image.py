@@ -130,7 +130,7 @@ def save_image(image_url, filepath, max_retries=5, retry_delay=3):
             # 使用更长的超时时间和流式下载
             response = requests.get(
                 image_url, 
-                timeout=(10, 60),  # (连接超时, 读取超时)
+                timeout=(20, 60),  # (连接超时, 读取超时)
                 stream=True,
                 headers={
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
