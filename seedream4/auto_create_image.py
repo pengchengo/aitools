@@ -7,6 +7,7 @@ import json
 import re
 import requests
 import random
+import time
 from pathlib import Path
 from volcenginesdkarkruntime import Ark
 from volcenginesdkarkruntime.types.images.images import SequentialImageGenerationOptions
@@ -114,21 +115,62 @@ def generate_images_for_theme(client, config, theme, theme_index, total_themes):
         return []
 
 
-def save_image(image_url, filepath):
+def save_image(image_url, filepath, max_retries=5, retry_delay=3):
     """
-    下载并保存图片
+    下载并保存图片（带重试机制）
+    
+    Args:
+        image_url: 图片URL
+        filepath: 保存路径
+        max_retries: 最大重试次数
+        retry_delay: 重试延迟（秒）
     """
-    try:
-        response = requests.get(image_url, timeout=30)
-        response.raise_for_status()
-        
-        with open(filepath, 'wb') as f:
-            f.write(response.content)
-        
-        return True
-    except Exception as e:
-        print(f"  ✗ 下载失败: {e}")
-        return False
+    for attempt in range(1, max_retries + 1):
+        try:
+            # 使用更长的超时时间和流式下载
+            response = requests.get(
+                image_url, 
+                timeout=(10, 60),  # (连接超时, 读取超时)
+                stream=True,
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                }
+            )
+            response.raise_for_status()
+            
+            # 流式写入文件，避免内存问题
+            with open(filepath, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+            
+            return True
+            
+        except requests.exceptions.Timeout:
+            if attempt < max_retries:
+                print(f"  ⚠ 下载超时，{retry_delay}秒后重试 ({attempt}/{max_retries})...")
+                time.sleep(retry_delay)
+            else:
+                print(f"  ✗ 下载失败: 超时（已重试{max_retries}次）")
+                return False
+                
+        except requests.exceptions.ConnectionError as e:
+            if attempt < max_retries:
+                print(f"  ⚠ 连接中断，{retry_delay}秒后重试 ({attempt}/{max_retries})...")
+                time.sleep(retry_delay)
+            else:
+                print(f"  ✗ 下载失败: 连接错误（已重试{max_retries}次）- {e}")
+                return False
+                
+        except Exception as e:
+            if attempt < max_retries:
+                print(f"  ⚠ 下载出错，{retry_delay}秒后重试 ({attempt}/{max_retries}): {e}")
+                time.sleep(retry_delay)
+            else:
+                print(f"  ✗ 下载失败: {e}（已重试{max_retries}次）")
+                return False
+    
+    return False
 
 
 def main():
@@ -184,6 +226,8 @@ def main():
         
         if not images_data:
             total_failed += 1
+            # 即使失败也等待一下，避免请求过快
+            time.sleep(1)
             continue
         
         # 保存图片
@@ -199,6 +243,14 @@ def main():
                 total_saved += 1
             else:
                 total_failed += 1
+            
+            # 每张图片下载后稍作延迟，避免请求过快
+            if img_idx < len(images_data):
+                time.sleep(0.5)
+        
+        # 每个主题处理完后稍作延迟
+        if theme_index < len(themes):
+            time.sleep(1)
         
         print()
     
