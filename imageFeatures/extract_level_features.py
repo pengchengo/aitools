@@ -113,17 +113,52 @@ class LevelFeatureExtractor:
         # 主色调（通过K-means聚类找到主要颜色）
         try:
             from sklearn.cluster import KMeans
+            from sklearn.metrics import silhouette_score
+            
             pixels = img_reshaped.astype(np.float32)
-            kmeans = KMeans(n_clusters=3, random_state=42, n_init=10)
-            kmeans.fit(pixels)
-            dominant_colors = kmeans.cluster_centers_.astype(int)
+            
+            # 固定3个主色调（保持向后兼容）
+            kmeans_3 = KMeans(n_clusters=3, random_state=42, n_init=10)
+            kmeans_3.fit(pixels)
+            dominant_colors = kmeans_3.cluster_centers_.astype(int)
             features['主色调1_R'] = int(dominant_colors[0][0])
             features['主色调1_G'] = int(dominant_colors[0][1])
             features['主色调1_B'] = int(dominant_colors[0][2])
+            
+            # 动态确定最佳颜色聚类数量（使用肘部法则或轮廓系数）
+            # 尝试2-10个聚类，选择轮廓系数最高的
+            best_k = 3
+            best_score = -1
+            
+            # 为了性能，只对采样后的像素进行聚类
+            sample_size = min(10000, len(pixels))
+            if len(pixels) > sample_size:
+                sample_indices = np.random.choice(len(pixels), sample_size, replace=False)
+                pixels_sample = pixels[sample_indices]
+            else:
+                pixels_sample = pixels
+            
+            for k in range(2, min(11, len(np.unique(pixels_sample, axis=0)) + 1)):
+                try:
+                    kmeans = KMeans(n_clusters=k, random_state=42, n_init=5)
+                    labels = kmeans.fit_predict(pixels_sample)
+                    if len(np.unique(labels)) > 1:
+                        score = silhouette_score(pixels_sample, labels)
+                        if score > best_score:
+                            best_score = score
+                            best_k = k
+                except:
+                    continue
+            
+            features['颜色聚类数量'] = best_k
+            features['颜色聚类轮廓系数'] = round(best_score, 3) if best_score > -1 else 0
+            
         except:
             features['主色调1_R'] = 0
             features['主色调1_G'] = 0
             features['主色调1_B'] = 0
+            features['颜色聚类数量'] = 0
+            features['颜色聚类轮廓系数'] = 0
         
         return features
     
@@ -189,6 +224,85 @@ class LevelFeatureExtractor:
         else:
             features['水平对称度'] = 0
         
+        # 对称性（垂直对称）
+        top_half = img_gray[:h//2, :]
+        bottom_half = cv2.flip(img_gray[h//2:, :], 0)
+        if bottom_half.shape[0] > top_half.shape[0]:
+            bottom_half = bottom_half[:top_half.shape[0], :]
+        elif bottom_half.shape[0] < top_half.shape[0]:
+            top_half = top_half[:bottom_half.shape[0], :]
+        
+        if top_half.shape == bottom_half.shape:
+            symmetry = 1 - np.mean(np.abs(top_half.astype(float) - bottom_half.astype(float))) / 255
+            features['垂直对称度'] = round(symmetry, 3)
+        else:
+            features['垂直对称度'] = 0
+        
+        # 四象限特征
+        mid_h, mid_w = h // 2, w // 2
+        quadrant_1 = img_gray[:mid_h, :mid_w]  # 左上
+        quadrant_2 = img_gray[:mid_h, mid_w:]  # 右上
+        quadrant_3 = img_gray[mid_h:, :mid_w]  # 左下
+        quadrant_4 = img_gray[mid_h:, mid_w:]  # 右下
+        
+        features['象限1平均亮度'] = round(np.mean(quadrant_1), 2)
+        features['象限2平均亮度'] = round(np.mean(quadrant_2), 2)
+        features['象限3平均亮度'] = round(np.mean(quadrant_3), 2)
+        features['象限4平均亮度'] = round(np.mean(quadrant_4), 2)
+        
+        # 四象限亮度标准差（衡量四个象限的亮度差异）
+        quadrant_means = [
+            np.mean(quadrant_1),
+            np.mean(quadrant_2),
+            np.mean(quadrant_3),
+            np.mean(quadrant_4)
+        ]
+        features['四象限亮度标准差'] = round(np.std(quadrant_means), 2)
+        
+        # 连通域在四象限的分布（如果有连通域数据）
+        try:
+            _, binary = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+            num_labels, labels = cv2.connectedComponents(binary)
+            if num_labels > 1:
+                quadrant_counts = [0, 0, 0, 0]
+                for label_id in range(1, num_labels):
+                    mask = (labels == label_id).astype(np.uint8)
+                    moments = cv2.moments(mask)
+                    if moments['m00'] > 0:
+                        cx = moments['m10'] / moments['m00']
+                        cy = moments['m01'] / moments['m00']
+                        # 判断重心在哪个象限
+                        if cy < mid_h and cx < mid_w:
+                            quadrant_counts[0] += 1
+                        elif cy < mid_h and cx >= mid_w:
+                            quadrant_counts[1] += 1
+                        elif cy >= mid_h and cx < mid_w:
+                            quadrant_counts[2] += 1
+                        else:
+                            quadrant_counts[3] += 1
+                
+                total_objects = sum(quadrant_counts)
+                if total_objects > 0:
+                    features['象限1物体占比'] = round(quadrant_counts[0] / total_objects * 100, 2)
+                    features['象限2物体占比'] = round(quadrant_counts[1] / total_objects * 100, 2)
+                    features['象限3物体占比'] = round(quadrant_counts[2] / total_objects * 100, 2)
+                    features['象限4物体占比'] = round(quadrant_counts[3] / total_objects * 100, 2)
+                else:
+                    features['象限1物体占比'] = 0
+                    features['象限2物体占比'] = 0
+                    features['象限3物体占比'] = 0
+                    features['象限4物体占比'] = 0
+            else:
+                features['象限1物体占比'] = 0
+                features['象限2物体占比'] = 0
+                features['象限3物体占比'] = 0
+                features['象限4物体占比'] = 0
+        except:
+            features['象限1物体占比'] = 0
+            features['象限2物体占比'] = 0
+            features['象限3物体占比'] = 0
+            features['象限4物体占比'] = 0
+        
         return features
     
     def _extract_complexity_features(self, img_gray: np.ndarray, img_rgb: np.ndarray) -> Dict:
@@ -209,6 +323,118 @@ class LevelFeatureExtractor:
         _, binary = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
         num_labels, labels = cv2.connectedComponents(binary)
         features['连通域数量'] = num_labels - 1  # 减去背景
+        
+        # 连通域形状特征
+        if num_labels > 1:  # 有物体
+            h, w = img_gray.shape
+            total_pixels = h * w
+            areas = []
+            aspect_ratios = []
+            compactness_scores = []
+            centroids = []
+            
+            for label_id in range(1, num_labels):  # 跳过背景（label 0）
+                # 获取该连通域的掩码
+                mask = (labels == label_id).astype(np.uint8)
+                area = np.sum(mask)
+                
+                if area > 0:
+                    areas.append(area)
+                    
+                    # 计算边界框
+                    coords = np.column_stack(np.where(mask > 0))
+                    if len(coords) > 0:
+                        y_min, x_min = coords.min(axis=0)
+                        y_max, x_max = coords.max(axis=0)
+                        bbox_h = y_max - y_min + 1
+                        bbox_w = x_max - x_min + 1
+                        
+                        # 长宽比
+                        if bbox_h > 0:
+                            aspect_ratio = bbox_w / bbox_h
+                            aspect_ratios.append(aspect_ratio)
+                        
+                        # 圆形度（Compactness）：4π*面积/周长²
+                        contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+                        if len(contours) > 0:
+                            perimeter = cv2.arcLength(contours[0], True)
+                            if perimeter > 0:
+                                compactness = (4 * np.pi * area) / (perimeter ** 2)
+                                compactness_scores.append(compactness)
+                        
+                        # 重心
+                        moments = cv2.moments(mask)
+                        if moments['m00'] > 0:
+                            cx = moments['m10'] / moments['m00']
+                            cy = moments['m01'] / moments['m00']
+                            centroids.append([cx, cy])
+            
+            # 连通域面积特征
+            if areas:
+                features['连通域平均面积'] = round(np.mean(areas), 2)
+                features['连通域面积标准差'] = round(np.std(areas), 2)
+                features['最大连通域面积占比'] = round(max(areas) / total_pixels * 100, 2)
+            else:
+                features['连通域平均面积'] = 0
+                features['连通域面积标准差'] = 0
+                features['最大连通域面积占比'] = 0
+            
+            # 连通域长宽比特征
+            if aspect_ratios:
+                features['连通域平均长宽比'] = round(np.mean(aspect_ratios), 3)
+                features['连通域长宽比标准差'] = round(np.std(aspect_ratios), 3)
+            else:
+                features['连通域平均长宽比'] = 0
+                features['连通域长宽比标准差'] = 0
+            
+            # 连通域圆形度特征
+            if compactness_scores:
+                features['连通域平均圆形度'] = round(np.mean(compactness_scores), 3)
+            else:
+                features['连通域平均圆形度'] = 0
+            
+            # 连通域空间分布特征
+            if len(centroids) > 1:
+                centroids = np.array(centroids)
+                # 重心位置（归一化到0-1）
+                features['连通域重心X均值'] = round(np.mean(centroids[:, 0]) / w, 3)
+                features['连通域重心Y均值'] = round(np.mean(centroids[:, 1]) / h, 3)
+                # 重心分布标准差（分散程度）
+                features['连通域重心X标准差'] = round(np.std(centroids[:, 0]) / w, 3)
+                features['连通域重心Y标准差'] = round(np.std(centroids[:, 1]) / h, 3)
+                
+                # 计算连通域之间的平均距离
+                from scipy.spatial.distance import pdist
+                distances = pdist(centroids)
+                if len(distances) > 0:
+                    features['连通域平均间距'] = round(np.mean(distances), 2)
+                else:
+                    features['连通域平均间距'] = 0
+            elif len(centroids) == 1:
+                features['连通域重心X均值'] = round(centroids[0][0] / w, 3)
+                features['连通域重心Y均值'] = round(centroids[0][1] / h, 3)
+                features['连通域重心X标准差'] = 0
+                features['连通域重心Y标准差'] = 0
+                features['连通域平均间距'] = 0
+            else:
+                features['连通域重心X均值'] = 0
+                features['连通域重心Y均值'] = 0
+                features['连通域重心X标准差'] = 0
+                features['连通域重心Y标准差'] = 0
+                features['连通域平均间距'] = 0
+        else:
+            # 没有连通域
+            features['连通域平均面积'] = 0
+            features['连通域面积标准差'] = 0
+            features['最大连通域面积占比'] = 0
+            features['连通域平均长宽比'] = 0
+            features['连通域长宽比标准差'] = 0
+            features['连通域平均圆形度'] = 0
+            features['连通域重心X均值'] = 0
+            features['连通域重心Y均值'] = 0
+            features['连通域重心X标准差'] = 0
+            features['连通域重心Y标准差'] = 0
+            features['连通域平均间距'] = 0
         
         # 空白区域比例
         white_pixels = np.sum(img_gray > 200)
