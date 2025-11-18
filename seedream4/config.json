@@ -1,0 +1,15 @@
+{
+  "image_count": 100,
+  "text_prompt_template": "我在做一个收纳游戏，帮我生成{1}个主题，例如：西双版纳，猎人的家(不要包括例子)等等，用逗号隔开，中文",
+  "image_prompt_template": "手绘卡通,2d,{1},室内布局,50-60个物品,画面丰富紧凑,色彩丰富,家具造型优美有特色,比例 16:9。没有人物。颜色靓丽,没有人物。",
+  "text_model": "kimi-k2-250905",
+  "image_model": "doubao-seedream-4-0-250828",
+  "image_size": "2K",
+  "max_images_per_prompt": 3,
+  "watermark": true,
+  "reference_images": [
+    "https://ark-project.tos-cn-beijing.volces.com/doc_image/seedream4_imagesToimages_1.png",
+    "https://ark-project.tos-cn-beijing.volces.com/doc_image/seedream4_imagesToimages_2.png"
+  ]
+}
+
