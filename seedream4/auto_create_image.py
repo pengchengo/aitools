@@ -184,7 +184,7 @@ def main():
     config = load_config(config_path)
     
     # 初始化客户端
-    api_key = os.getenv('ARK_API_KEY')
+    api_key = config['api_key']
     if not api_key:
         print("错误: 请设置环境变量 ARK_API_KEY")
         print("Windows: set ARK_API_KEY=your-api-key")
