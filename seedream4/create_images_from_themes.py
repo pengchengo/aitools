@@ -210,7 +210,8 @@ def main():
         for img_idx, image in enumerate(images_data, 1):
             # 生成文件名（使用主题名称）
             filename_base = sanitize_filename(theme)
-            filename = f"{filename_base}_{img_idx}.png"
+            second_time = int(time.time())
+            filename = f"{filename_base}_{img_idx}_{second_time}.png"
             filepath = images_dir / filename
             
             # 下载并保存
